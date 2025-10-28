@@ -139,9 +139,9 @@ The server handles SIGINT (Ctrl+C) and SIGTERM signals for graceful shutdown:
 - Minimal memory allocation
 - Thread-per-client model for simplicity
 
-## License
+## MIT License
 
-See LICENSE file for details.
+See MIT LICENSE file for details.
 
 ## Course Information
 
