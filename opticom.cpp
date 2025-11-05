@@ -1,4 +1,3 @@
-// Opticom - Multi-Client Chat Server
 #include <iostream>
 #include <vector>
 #include <thread>
@@ -11,14 +10,27 @@
 #include <unistd.h>
 #include <signal.h>
 #include <algorithm>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 
 using namespace std;
+
+// To store socket username and address together
+struct ClientInfo {
+    int socket;
+    string name;
+    string addr;
+};
 
 class ChatServer {
 private:
     int serverSocket;
     int port;
-    vector<int> clientSockets;
+
+    //Updated the vector
+    vector<ClientInfo> clients;
+
     mutex clientsMutex;
     bool running;
 
@@ -28,8 +40,7 @@ public:
         if (serverSocket < 0) {
             throw runtime_error("Failed to create socket");
         }
-        
-        // Allow socket reuse
+
         int opt = 1;
         if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
             throw runtime_error("Failed to set socket options");
@@ -61,29 +72,25 @@ public:
         cout << "Opticom Chat Server started on port " << port << endl;
         cout << "Waiting for clients to connect..." << endl;
 
+        //Clients get handled in handleclient()
         while (running) {
             struct sockaddr_in clientAddr;
             socklen_t clientAddrLen = sizeof(clientAddr);
-            
+
             int clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientAddrLen);
             if (clientSocket < 0) {
-                if (running) {
-                    cerr << "Failed to accept client connection" << endl;
-                }
+                if (running) cerr << "Failed to accept client connection" << endl;
                 continue;
             }
 
-            cout << "New client connected from " << inet_ntoa(clientAddr.sin_addr) 
-                 << ":" << ntohs(clientAddr.sin_port) << endl;
+            // Reads client address
+            string clientIp = inet_ntoa(clientAddr.sin_addr);
+            int clientPort = ntohs(clientAddr.sin_port);
+            string addrStr = clientIp + ":" + to_string(clientPort);
+            cout << "Incoming connection from " << addrStr << endl;
 
-            // Add client to list
-            {
-                lock_guard<mutex> lock(clientsMutex);
-                clientSockets.push_back(clientSocket);
-            }
-
-            // Handle client in separate thread
-            thread clientThread(&ChatServer::handleClient, this, clientSocket);
+            
+            thread clientThread(&ChatServer::handleClient, this, clientSocket, addrStr);
             clientThread.detach();
         }
     }
@@ -92,63 +99,137 @@ public:
         running = false;
         if (serverSocket >= 0) {
             close(serverSocket);
+            serverSocket = -1;
         }
-        
-        // Close all client connections
+
         lock_guard<mutex> lock(clientsMutex);
-        for (int clientSocket : clientSockets) {
-            close(clientSocket);
+        for (auto &c : clients) {
+            close(c.socket);
         }
-        clientSockets.clear();
+        clients.clear();
     }
 
 private:
-    void handleClient(int clientSocket) {
+    // timestamps in the form [HH:MM:SS]
+    static string nowTimestamp() {
+        using namespace chrono;
+        auto t = system_clock::now();
+        auto tt = system_clock::to_time_t(t);
+        tm local_tm;
+        localtime_r(&tt, &local_tm);
+        stringstream ss;
+        ss << put_time(&local_tm, "%H:%M:%S");
+        return ss.str();
+    }
+
+    
+    // handleClient() includes:
+    //    - username handshake
+    //    - join/leave messages
+    //    - timestamped broadcasts
+    void handleClient(int clientSocket, string addrStr) {
+        // --- USERNAME HANDSHAKE 
+        const int NAME_MAX = 64;
+        char nameBuf[NAME_MAX];
+        memset(nameBuf, 0, sizeof(nameBuf));
+
+        ssize_t r = recv(clientSocket, nameBuf, sizeof(nameBuf) - 1, 0);
+        if (r <= 0) {
+            cerr << "Failed to read username from " << addrStr << endl;
+            close(clientSocket);
+            return;
+        }
+
+        string username(nameBuf);
+        while (!username.empty() && (username.back() == '\n' || username.back() == '\r'))
+            username.pop_back();
+        if (username.empty()) username = "Anonymous";
+
+        // --- ADDS CLIENT 
+        {
+            lock_guard<mutex> lock(clientsMutex);
+            clients.push_back({clientSocket, username, addrStr});
+        }
+
+        // --- ANNOUNCES NEW
+        string joinMsg = "[" + nowTimestamp() + "] " + username + " joined the chat";
+        cout << joinMsg << " (" << addrStr << ")" << endl;
+        broadcastMessage(joinMsg, clientSocket);
+
+        // --- MAIN MESSAGE LOOP ---
         char buffer[1024];
-        
         while (running) {
             memset(buffer, 0, sizeof(buffer));
-            int bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-            
+            ssize_t bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+
             if (bytesReceived <= 0) {
-                // Client disconnected
-                cout << "Client disconnected" << endl;
+                // Shows people who disconnected
+                cout << "[" << nowTimestamp() << "] " << username << " disconnected" << endl;
                 removeClient(clientSocket);
                 close(clientSocket);
+                string leftMsg = "[" + nowTimestamp() + "] " + username + " left the chat";
+                broadcastMessage(leftMsg, -1);
                 break;
             }
 
-            string message(buffer);
-            cout << "Received: " << message << endl;
+            
+            string raw(buffer, buffer + bytesReceived);
+            while (!raw.empty() && (raw.back() == '\n' || raw.back() == '\r')) raw.pop_back();
+            if (raw.empty()) continue;
+            
+            //handle /list command shows users who are online
+            if (raw == "/list") {
+             string listMsg = "Online users:\n";
+             {
+             lock_guard<mutex> lock(clientsMutex);
+             for (auto &c : clients)
+                listMsg += " - " + c.name + "\n";}
+                send(clientSocket, listMsg.c_str(), listMsg.size(), 0);
+                continue;
+            } // skips broadcasting this command
 
-            // Broadcast message to all other clients
-            broadcastMessage(message, clientSocket);
+
+            string formatted = "[" + nowTimestamp() + "] " + username + ": " + raw;
+            cout << "Received: " << formatted << endl;
+            broadcastMessage(formatted, clientSocket);
         }
     }
 
+    
+    // broadcastMessage():
+    //    - Iterates over vector<ClientInfo>
+    //    - Removes dead clients safely
+    //    - Appends newline to messages
     void broadcastMessage(const string& message, int senderSocket) {
         lock_guard<mutex> lock(clientsMutex);
-        
-        for (int clientSocket : clientSockets) {
-            if (clientSocket != senderSocket) {
-                if (send(clientSocket, message.c_str(), message.length(), 0) < 0) {
-                    // Remove failed client
-                    removeClient(clientSocket);
-                }
+        for (auto it = clients.begin(); it != clients.end();) {
+            int sock = it->socket;
+            if (sock == senderSocket) {
+                ++it;
+                continue;
+            }
+
+            ssize_t sent = send(sock, message.c_str(), message.size(), 0);
+            if (sent < 0) {
+                close(sock);
+                it = clients.erase(it);
+            } else {
+                send(sock, "\n", 1, 0);  // 🔹 NEW: makes messages display neatly
+                ++it;
             }
         }
     }
 
+    // 🔹 Slightly updated to work with ClientInfo
     void removeClient(int clientSocket) {
         lock_guard<mutex> lock(clientsMutex);
-        clientSockets.erase(
-            remove(clientSockets.begin(), clientSockets.end(), clientSocket),
-            clientSockets.end()
-        );
+        clients.erase(remove_if(clients.begin(), clients.end(),
+                                [clientSocket](const ClientInfo& c){ return c.socket == clientSocket; }),
+                      clients.end());
     }
 };
 
-// Global server instance for signal handling
+
 ChatServer* serverInstance = nullptr;
 
 void signalHandler(int signal) {
@@ -162,8 +243,8 @@ void signalHandler(int signal) {
 }
 
 int main(int argc, char* argv[]) {
-    int port = 8080; // Default port
-    
+    int port = 8080;
+
     if (argc > 1) {
         port = atoi(argv[1]);
         if (port <= 0 || port > 65535) {
@@ -175,11 +256,10 @@ int main(int argc, char* argv[]) {
     try {
         ChatServer server(port);
         serverInstance = &server;
-        
-        // Set up signal handlers
+
         signal(SIGINT, signalHandler);
         signal(SIGTERM, signalHandler);
-        
+
         server.start();
     } catch (const exception& e) {
         cerr << "Error: " << e.what() << endl;
@@ -188,3 +268,4 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+

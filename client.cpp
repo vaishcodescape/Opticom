@@ -1,137 +1,97 @@
-// Simple client for testing Opticom Chat Server
 #include <iostream>
 #include <string>
 #include <thread>
+#include <cstring>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <cstring>
 
 using namespace std;
 
-class ChatClient {
-private:
-    int clientSocket;
-    string serverIP;
-    int port;
-    bool connected;
-
-public:
-    ChatClient(const string& ip, int port) : serverIP(ip), port(port), connected(false) {
-        clientSocket = socket(AF_INET, SOCK_STREAM, 0);
-        if (clientSocket < 0) {
-            throw runtime_error("Failed to create socket");
+void receiveMessages(int sock) {
+    char buffer[1024];
+    while (true) {
+        memset(buffer, 0, sizeof(buffer));
+        ssize_t bytes = recv(sock, buffer, sizeof(buffer) - 1, 0);
+        if (bytes <= 0) {
+            cout << "Disconnected from server." << endl;
+            close(sock);
+            exit(0);
         }
+        cout << buffer << endl;
     }
-
-    ~ChatClient() {
-        disconnect();
-    }
-
-    bool connect() {
-        struct sockaddr_in serverAddr;
-        serverAddr.sin_family = AF_INET;
-        serverAddr.sin_port = htons(port);
-        
-        if (inet_pton(AF_INET, serverIP.c_str(), &serverAddr.sin_addr) <= 0) {
-            cerr << "Invalid server address" << endl;
-            return false;
-        }
-
-        if (::connect(clientSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
-            cerr << "Failed to connect to server" << endl;
-            return false;
-        }
-
-        connected = true;
-        cout << "Connected to chat server at " << serverIP << ":" << port << endl;
-        return true;
-    }
-
-    void disconnect() {
-        if (connected) {
-            close(clientSocket);
-            connected = false;
-            cout << "Disconnected from server" << endl;
-        }
-    }
-
-    void sendMessage(const string& message) {
-        if (!connected) {
-            cerr << "Not connected to server" << endl;
-            return;
-        }
-
-        if (send(clientSocket, message.c_str(), message.length(), 0) < 0) {
-            cerr << "Failed to send message" << endl;
-            connected = false;
-        }
-    }
-
-    void receiveMessages() {
-        char buffer[1024];
-        
-        while (connected) {
-            memset(buffer, 0, sizeof(buffer));
-            int bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-            
-            if (bytesReceived <= 0) {
-                cout << "Server disconnected" << endl;
-                connected = false;
-                break;
-            }
-
-            cout << "Received: " << buffer << endl;
-        }
-    }
-
-    bool isConnected() const {
-        return connected;
-    }
-};
+}
 
 int main(int argc, char* argv[]) {
-    string serverIP = "127.0.0.1";
-    int port = 8080;
-
-    if (argc > 1) {
-        serverIP = argv[1];
-    }
-    if (argc > 2) {
-        port = atoi(argv[2]);
-    }
-
-    try {
-        ChatClient client(serverIP, port);
-        
-        if (!client.connect()) {
-            return 1;
-        }
-
-        // Start receiving messages in a separate thread
-        thread receiveThread(&ChatClient::receiveMessages, &client);
-
-        cout << "Type messages to send (type 'quit' to exit):" << endl;
-        
-        string message;
-        while (client.isConnected()) {
-            getline(cin, message);
-            
-            if (message == "quit") {
-                break;
-            }
-            
-            client.sendMessage(message);
-        }
-
-        client.disconnect();
-        receiveThread.join();
-        
-    } catch (const exception& e) {
-        cerr << "Error: " << e.what() << endl;
+    // Allow 1 or 2 arguments (port only or IP + port)
+    if (argc != 2 && argc != 3) {
+        cerr << "Usage: ./client [server_ip] <port>" << endl;
+        cerr << "Example (local): ./client 8080" << endl;
+        cerr << "Example (remote): ./client 192.168.1.105 8080" << endl;
         return 1;
+    }
+
+    //  Default to localhost unless IP is provided
+    string serverIp = "127.0.0.1";
+    int port;
+
+    if (argc == 2) {
+        port = stoi(argv[1]);
+    } else {
+        serverIp = argv[1];
+        port = stoi(argv[2]);
+    }
+
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        cerr << "Failed to create socket." << endl;
+        return 1;
+    }
+
+    struct sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(port);
+    inet_pton(AF_INET, serverIp.c_str(), &serverAddr.sin_addr);
+
+    if (connect(sock, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
+        cerr << "Connection failed to " << serverIp << ":" << port << endl;
+        return 1;
+    }
+
+    
+    string username;
+    cout << "Enter your username: ";
+    getline(cin, username);
+    if (username.empty()) username = "Anonymous";
+    send(sock, username.c_str(), username.size(), 0);
+
+    cout << "Connected to server (" << serverIp << ":" << port << ") as " << username << endl;
+    cout << "Type messages below. Use /quit to disconnect & /list to see people who are online." << endl;
+
+    thread receiver(receiveMessages, sock);
+    receiver.detach();
+
+    string message;
+    while (true) {
+        getline(cin, message);
+
+        if (message == "/quit") {
+            cout << "Disconnecting..." << endl;
+            close(sock);
+            exit(0);
+        }
+
+        if (message.empty()) continue;
+
+        ssize_t sent = send(sock, message.c_str(), message.size(), 0);
+        if (sent < 0) {
+            cerr << "Send failed." << endl;
+            close(sock);
+            exit(1);
+        }
     }
 
     return 0;
 }
+
