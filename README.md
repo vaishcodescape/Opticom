@@ -236,6 +236,3 @@ This project was developed as part of IT-227 Computer System Programming Course 
 * Network communication protocols
 
 ---
-
-✅ That’s the full, ready-to-use version — no formatting or syntax issues, and it’ll render beautifully on GitHub.
-
