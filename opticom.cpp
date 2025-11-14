@@ -23,6 +23,10 @@ struct ClientInfo {
     string addr;
     string room = "general";
 
+    // 🆕 Rate limiting fields (added, default-initialized)
+    chrono::steady_clock::time_point lastMsgTime = chrono::steady_clock::now();
+    int msgCount = 0;  // messages sent in the current second
+
     ClientInfo(int s, const string& n, const string& a, const string& r)
         : socket(s), name(n), addr(a), room(r) {}
 };
@@ -122,6 +126,31 @@ private:
         send(clientSocket, footer.c_str(), footer.size(), 0);
     }
 
+    // 🆕 Rate limiter helper: returns true if client exceeded the limit
+    bool isRateLimited(int clientSocket) {
+        lock_guard<mutex> lock(clientsMutex);
+
+        for (auto &c : clients) {
+            if (c.socket == clientSocket) {
+                auto now = chrono::steady_clock::now();
+                auto diff = chrono::duration_cast<chrono::milliseconds>(now - c.lastMsgTime).count();
+
+                // Reset counter if more than 1 second passed
+                if (diff > 1000) {
+                    c.msgCount = 0;
+                    c.lastMsgTime = now;
+                }
+
+                c.msgCount++;
+
+                // Allow up to 3 messages per second
+                if (c.msgCount > 3) return true;
+                return false;
+            }
+        }
+        return false;
+    }
+
     void handleClient(int clientSocket, string addrStr) {
         const int USERNAME_MAX = 64;
         char nameBuf[USERNAME_MAX]{};
@@ -195,6 +224,13 @@ private:
                 string targetUser = rest.substr(0, space);
                 string privateMsg = rest.substr(space + 1);
                 sendPrivateMessage(username, targetUser, privateMsg);
+                continue;
+            }
+
+            // 🛑 Rate Limiting (3 messages per second)
+            if (isRateLimited(clientSocket)) {
+                string warn = "⚠️ Rate limit exceeded. Slow down!\n";
+                send(clientSocket, warn.c_str(), warn.size(), 0);
                 continue;
             }
 
