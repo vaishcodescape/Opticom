@@ -13,7 +13,7 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
-#include <fstream>   // 🆕 for message history
+#include <fstream>    
 
 using namespace std;
 
@@ -23,10 +23,9 @@ struct ClientInfo {
     string addr;
     string room = "general";
 
-    // 🆕 Rate limiting fields (added, default-initialized)
+   
     chrono::steady_clock::time_point lastMsgTime = chrono::steady_clock::now();
-    int msgCount = 0;  // messages sent in the current second
-
+    int msgCount = 0;   
     ClientInfo(int s, const string& n, const string& a, const string& r)
         : socket(s), name(n), addr(a), room(r) {}
 };
@@ -125,8 +124,7 @@ private:
         string footer = "-------------------------------------------\n";
         send(clientSocket, footer.c_str(), footer.size(), 0);
     }
-
-    // 🆕 Rate limiter helper: returns true if client exceeded the limit
+ 
     bool isRateLimited(int clientSocket) {
         lock_guard<mutex> lock(clientsMutex);
 
