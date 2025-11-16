@@ -13,7 +13,7 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
-#include <fstream>   // 🆕 for message history
+#include <fstream>    
 
 using namespace std;
 
@@ -23,6 +23,9 @@ struct ClientInfo {
     string addr;
     string room = "general";
 
+   
+    chrono::steady_clock::time_point lastMsgTime = chrono::steady_clock::now();
+    int msgCount = 0;   
     ClientInfo(int s, const string& n, const string& a, const string& r)
         : socket(s), name(n), addr(a), room(r) {}
 };
@@ -101,14 +104,12 @@ private:
         return ss.str();
     }
 
-    // 🆕 Save message to file by room
-    void saveMessage(const string& room, const string& message) {
+     void saveMessage(const string& room, const string& message) {
         ofstream file("history_" + room + ".txt", ios::app);
         if (file.is_open()) file << message << endl;
     }
 
-    // 🆕 Load message history when user joins
-    void sendRoomHistory(int clientSocket, const string& room) {
+     void sendRoomHistory(int clientSocket, const string& room) {
         ifstream file("history_" + room + ".txt");
         if (!file.is_open()) return;
         string line;
@@ -120,6 +121,28 @@ private:
         }
         string footer = "-------------------------------------------\n";
         send(clientSocket, footer.c_str(), footer.size(), 0);
+    }
+ 
+    bool isRateLimited(int clientSocket) {
+        lock_guard<mutex> lock(clientsMutex);
+
+        for (auto &c : clients) {
+            if (c.socket == clientSocket) {
+                auto now = chrono::steady_clock::now();
+                auto diff = chrono::duration_cast<chrono::milliseconds>(now - c.lastMsgTime).count();
+
+                if (diff > 1000) {
+                    c.msgCount = 0;
+                    c.lastMsgTime = now;
+                }
+
+                c.msgCount++;
+
+                if (c.msgCount > 3) return true;
+                return false;
+            }
+        }
+        return false;
     }
 
     void handleClient(int clientSocket, string addrStr) {
@@ -141,7 +164,7 @@ private:
         cout << joinMsg << endl;
         broadcastMessage(joinMsg, clientSocket, "general");
         saveMessage("general", joinMsg);
-        sendRoomHistory(clientSocket, "general"); // 🆕 send old messages
+        sendRoomHistory(clientSocket, "general");  
 
         char buffer[1024];
         while (running) {
@@ -160,7 +183,6 @@ private:
             while (!msg.empty() && (msg.back() == '\n' || msg.back() == '\r')) msg.pop_back();
             if (msg.empty()) continue;
 
-            // 🆕 Commands
             if (msg == "/list") {
                 string listMsg = "Online users:\n";
                 lock_guard<mutex> lock(clientsMutex);
@@ -198,6 +220,12 @@ private:
                 continue;
             }
 
+             if (isRateLimited(clientSocket)) {
+                string warn = "⚠️ Rate limit exceeded. Slow down!\n";
+                send(clientSocket, warn.c_str(), warn.size(), 0);
+                continue;
+            }
+
             // Normal message
             string formatted = "[" + nowTimestamp() + "] " + username + ": " + msg;
             broadcastMessage(formatted, clientSocket, getClientRoom(clientSocket));
@@ -205,7 +233,7 @@ private:
         }
     }
 
-    // 🆕 Get client room by socket
+ 
     string getClientRoom(int sock) {
         lock_guard<mutex> lock(clientsMutex);
         for (auto &c : clients)
@@ -214,7 +242,7 @@ private:
         return "general";
     }
 
-    // 🆕 Send private message
+     
     void sendPrivateMessage(const string& fromUser, const string& toUser, const string& msg) {
         lock_guard<mutex> lock(clientsMutex);
         for (auto &c : clients) {
