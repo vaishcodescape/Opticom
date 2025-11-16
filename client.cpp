@@ -24,7 +24,7 @@ void receiveMessages(int sock) {
 }
 
 int main(int argc, char* argv[]) {
-    // Allow 1 or 2 arguments (port only or IP + port)
+ 
     if (argc != 2 && argc != 3) {
         cerr << "Usage: ./client [server_ip] <port>" << endl;
         cerr << "Example (local): ./client 8080" << endl;
@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    //  Default to localhost unless IP is provided
+ 
     string serverIp = "127.0.0.1";
     int port;
 

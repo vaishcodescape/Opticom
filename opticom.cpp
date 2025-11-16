@@ -104,14 +104,12 @@ private:
         return ss.str();
     }
 
-    // 🆕 Save message to file by room
-    void saveMessage(const string& room, const string& message) {
+     void saveMessage(const string& room, const string& message) {
         ofstream file("history_" + room + ".txt", ios::app);
         if (file.is_open()) file << message << endl;
     }
 
-    // 🆕 Load message history when user joins
-    void sendRoomHistory(int clientSocket, const string& room) {
+     void sendRoomHistory(int clientSocket, const string& room) {
         ifstream file("history_" + room + ".txt");
         if (!file.is_open()) return;
         string line;
@@ -133,7 +131,6 @@ private:
                 auto now = chrono::steady_clock::now();
                 auto diff = chrono::duration_cast<chrono::milliseconds>(now - c.lastMsgTime).count();
 
-                // Reset counter if more than 1 second passed
                 if (diff > 1000) {
                     c.msgCount = 0;
                     c.lastMsgTime = now;
@@ -141,7 +138,6 @@ private:
 
                 c.msgCount++;
 
-                // Allow up to 3 messages per second
                 if (c.msgCount > 3) return true;
                 return false;
             }
@@ -168,7 +164,7 @@ private:
         cout << joinMsg << endl;
         broadcastMessage(joinMsg, clientSocket, "general");
         saveMessage("general", joinMsg);
-        sendRoomHistory(clientSocket, "general"); // 🆕 send old messages
+        sendRoomHistory(clientSocket, "general");  
 
         char buffer[1024];
         while (running) {
@@ -187,7 +183,6 @@ private:
             while (!msg.empty() && (msg.back() == '\n' || msg.back() == '\r')) msg.pop_back();
             if (msg.empty()) continue;
 
-            // 🆕 Commands
             if (msg == "/list") {
                 string listMsg = "Online users:\n";
                 lock_guard<mutex> lock(clientsMutex);
@@ -225,8 +220,7 @@ private:
                 continue;
             }
 
-            // 🛑 Rate Limiting (3 messages per second)
-            if (isRateLimited(clientSocket)) {
+             if (isRateLimited(clientSocket)) {
                 string warn = "⚠️ Rate limit exceeded. Slow down!\n";
                 send(clientSocket, warn.c_str(), warn.size(), 0);
                 continue;
@@ -239,7 +233,7 @@ private:
         }
     }
 
-    // 🆕 Get client room by socket
+ 
     string getClientRoom(int sock) {
         lock_guard<mutex> lock(clientsMutex);
         for (auto &c : clients)
@@ -248,7 +242,7 @@ private:
         return "general";
     }
 
-    // 🆕 Send private message
+     
     void sendPrivateMessage(const string& fromUser, const string& toUser, const string& msg) {
         lock_guard<mutex> lock(clientsMutex);
         for (auto &c : clients) {
