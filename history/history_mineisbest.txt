@@ -1,0 +1,12 @@
+[15:10:11] seven joined room mineisbest
+[15:11:09] Soham joined room mineisbest
+[15:11:16] avaish  joined room mineisbest
+[15:11:16] Soham: hello 
+[15:11:20] Soham: hello
+[15:11:30] avaish : Hello this our CSP Hello this is our IT-227 Project
+[15:11:51] Soham: bloc/block seven
+[15:12:08] Soham: /helo
+[15:12:25] seven: hi'
+[15:15:14] Soham: /leave mineisbest
+[15:15:19] seven left room mineisbest
+[15:15:31] Soham: leave mineisbest
