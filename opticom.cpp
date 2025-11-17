@@ -15,8 +15,41 @@
 #include <sstream>
 #include <fstream>
 #include <unordered_map>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 using namespace std;
+
+// ANSI Color Codes
+#define COLOR_RESET   "\033[0m"
+#define COLOR_BOLD    "\033[1m"
+#define COLOR_GREEN   "\033[32m"
+#define COLOR_YELLOW  "\033[33m"
+#define COLOR_BLUE    "\033[34m"
+#define COLOR_MAGENTA "\033[35m"
+#define COLOR_CYAN    "\033[36m"
+#define COLOR_RED     "\033[31m"
+
+// Simple XOR encryption/decryption
+namespace Encryption
+{
+    const string KEY = "OpticomSecureKey2024"; // Shared key
+    
+    string encrypt(const string &plaintext)
+    {
+        string result = plaintext;
+        for (size_t i = 0; i < result.length(); ++i)
+        {
+            result[i] ^= KEY[i % KEY.length()];
+        }
+        return result;
+    }
+    
+    string decrypt(const string &ciphertext)
+    {
+        return encrypt(ciphertext); // XOR is symmetric
+    }
+}
 
 struct ClientInfo
 {
@@ -24,6 +57,7 @@ struct ClientInfo
     string name;
     string addr;
     string room = "general";
+    vector<string> blockedUsers; // List of blocked usernames
 
     chrono::steady_clock::time_point lastMsgTime = chrono::steady_clock::now();
     int msgCount = 0;
@@ -39,6 +73,7 @@ private:
     vector<ClientInfo> clients;
     mutex clientsMutex;
     bool running;
+    unordered_map<string, int> roomSlowmodeSeconds; // seconds per room
 
 public:
     ChatServer(int port) : port(port), running(false)
@@ -73,8 +108,18 @@ public:
             throw runtime_error("Failed to listen on socket");
 
         running = true;
-        cout << "Opticom Chat Server started on port " << port << endl;
-        cout << "Waiting for clients to connect..." << endl;
+        
+        // Display startup banner
+        cout << "\n" << COLOR_BOLD << COLOR_CYAN;
+        cout << "================================================\n";
+        cout << "                                                \n";
+        cout << "           " << COLOR_YELLOW << "OPTICOM CHAT SERVER" << COLOR_CYAN << "             \n";
+        cout << "                                                \n";
+        cout << "================================================\n" << COLOR_RESET;
+        cout << COLOR_GREEN << "✓ Server started on port " << port << COLOR_RESET << endl;
+        cout << COLOR_BLUE << "⌛ Waiting for clients to connect...\n" << COLOR_RESET;
+        cout << COLOR_MAGENTA << "📝 Admin commands: type 'help' for options\n" << COLOR_RESET;
+        cout << string(50, '-') << "\n" << endl;
 
         thread(&ChatServer::adminConsole, this).detach();
 
@@ -106,6 +151,34 @@ public:
     }
 
 private:
+    static bool sendAll(int sock, const char* data, size_t len)
+    {
+        // Encrypt before sending
+        string plaintext(data, len);
+        string encrypted = Encryption::encrypt(plaintext);
+        
+        size_t totalSent = 0;
+        const char* encData = encrypted.c_str();
+        size_t encLen = encrypted.length();
+        
+        while (totalSent < encLen)
+        {
+            ssize_t n = send(sock, encData + totalSent, encLen - totalSent, 0);
+            if (n <= 0) return false;
+            totalSent += static_cast<size_t>(n);
+        }
+        return true;
+    }
+
+    static void ensureHistoryDir()
+    {
+        struct stat st{};
+        if (stat("history", &st) != 0)
+        {
+            mkdir("history", 0755);
+        }
+    }
+
     static string nowTimestamp()
     {
         using namespace chrono;
@@ -137,46 +210,73 @@ private:
                 string msg = "[SERVER] " + cmd.substr(4);
                 broadcastMessage(msg, -1, "general");
             }
+            else if (cmd.rfind("slowmode ", 0) == 0)
+            {
+                // slowmode <room> <seconds>
+                istringstream iss(cmd.substr(9));
+                string room; int seconds = 0;
+                if (iss >> room >> seconds)
+                {
+                    {
+                        lock_guard<mutex> lock(clientsMutex);
+                        roomSlowmodeSeconds[room] = max(0, seconds);
+                    }
+                    string notice = "[SERVER] Slowmode for room '" + room + "' set to " + to_string(seconds) + "s";
+                    broadcastMessage(notice, -1, room);
+                    cout << notice << endl;
+                }
+                else
+                {
+                    cout << "Usage: slowmode <room> <seconds>" << endl;
+                }
+            }
             else if (cmd == "list")
             {
                 lock_guard<mutex> lock(clientsMutex);
-                cout << "Connected users:\n";
+                cout << COLOR_CYAN << "\n╔═══ Connected Users ═══╗" << COLOR_RESET << endl;
                 for (auto &c : clients)
-                    cout << " - " << c.name << " (" << c.addr << ") room=" << c.room << endl;
+                    cout << COLOR_GREEN << "  • " << COLOR_RESET << c.name 
+                         << COLOR_YELLOW << " (" << c.addr << ")" << COLOR_RESET
+                         << COLOR_BLUE << " room=" << c.room << COLOR_RESET << endl;
+                cout << COLOR_CYAN << "╚═══════════════════════╝\n" << COLOR_RESET << endl;
             }
             else if (cmd == "help")
             {
-                cout << "Admin Commands:\n";
-                cout << "  kick <username>\n";
-                cout << "  say <message>\n";
-                cout << "  list\n";
-                cout << "  help\n";
+                cout << COLOR_MAGENTA << "\n╔═══ Admin Commands ═══╗" << COLOR_RESET << endl;
+                cout << COLOR_YELLOW << "  kick <username>" << COLOR_RESET << "       - Kick a user\n";
+                cout << COLOR_YELLOW << "  say <message>" << COLOR_RESET << "         - Broadcast to general room\n";
+                cout << COLOR_YELLOW << "  slowmode <room> <sec>" << COLOR_RESET << " - Set room slowmode\n";
+                cout << COLOR_YELLOW << "  list" << COLOR_RESET << "                  - List online users\n";
+                cout << COLOR_YELLOW << "  help" << COLOR_RESET << "                  - Show this help\n";
+                cout << COLOR_MAGENTA << "╚═══════════════════════╝\n" << COLOR_RESET << endl;
             }
         }
     }
 
     void saveMessage(const string &room, const string &message)
     {
-        ofstream file("history_" + room + ".txt", ios::app);
+        ensureHistoryDir();
+        ofstream file("history/history_" + room + ".txt", ios::app);
         if (file.is_open())
             file << message << endl;
     }
 
     void sendRoomHistory(int clientSocket, const string &room)
     {
-        ifstream file("history_" + room + ".txt");
+        ensureHistoryDir();
+        ifstream file("history/history_" + room + ".txt");
         if (!file.is_open())
             return;
         string line;
         string header = "---- Chat History for room '" + room + "' ----\n";
-        send(clientSocket, header.c_str(), header.size(), 0);
+        sendAll(clientSocket, header.c_str(), header.size());
         while (getline(file, line))
         {
-            send(clientSocket, line.c_str(), line.size(), 0);
-            send(clientSocket, "\n", 1, 0);
+            sendAll(clientSocket, line.c_str(), line.size());
+            sendAll(clientSocket, "\n", 1);
         }
         string footer = "-------------------------------------------\n";
-        send(clientSocket, footer.c_str(), footer.size(), 0);
+        sendAll(clientSocket, footer.c_str(), footer.size());
     }
 
     bool isRateLimited(int clientSocket)
@@ -212,7 +312,10 @@ private:
         char nameBuf[USERNAME_MAX]{};
         ssize_t r = recv(clientSocket, nameBuf, sizeof(nameBuf) - 1, 0);
         if (r <= 0)
+        {
+            close(clientSocket);
             return;
+        }
 
         string username(nameBuf);
         while (!username.empty() && (username.back() == '\n' || username.back() == '\r'))
@@ -226,7 +329,7 @@ private:
         }
 
         string joinMsg = "[" + nowTimestamp() + "] " + username + " joined the chat (room: general)";
-        cout << joinMsg << endl;
+        cout << COLOR_GREEN << "→ " << COLOR_RESET << joinMsg << endl;
         broadcastMessage(joinMsg, clientSocket, "general");
         saveMessage("general", joinMsg);
         sendRoomHistory(clientSocket, "general");
@@ -239,14 +342,19 @@ private:
 
             if (bytes <= 0)
             {
+                close(clientSocket);
                 removeClient(clientSocket);
                 string leftMsg = "[" + nowTimestamp() + "] " + username + " left the chat";
+                cout << COLOR_RED << "← " << COLOR_RESET << leftMsg << endl;
                 broadcastMessage(leftMsg, -1, "general");
                 saveMessage("general", leftMsg);
                 break;
             }
 
-            string msg(buffer, buffer + bytes);
+            // Decrypt received message
+            string encrypted(buffer, buffer + bytes);
+            string msg = Encryption::decrypt(encrypted);
+            
             while (!msg.empty() && (msg.back() == '\n' || msg.back() == '\r'))
                 msg.pop_back();
             if (msg.empty())
@@ -268,7 +376,7 @@ private:
                     out += " - " + r.first + " (" + to_string(r.second) + " users)\n";
                 }
 
-                send(clientSocket, out.c_str(), out.size(), 0);
+                sendAll(clientSocket, out.c_str(), out.size());
                 continue;
             }
 
@@ -280,11 +388,17 @@ private:
                     "/rooms              - List all active rooms\n"
                     "/join <room>        - Join or create a room\n"
                     "/pm <user> <msg>    - Private message\n"
+                    "/block <user>       - Block messages from a user\n"
+                    "/unblock <user>     - Unblock a user\n"
+                    "/blocklist          - Show your blocked users\n"
+                    "/pin <msg>          - Pin a message to the room board\n"
+                    "/pins               - Show pinned messages for the room\n"
+                    "/unpin <index>      - Remove a pinned message by index\n"
                     "/quit               - Disconnect from server\n"
                     "/help               - Show this help\n";
 
                 help += "\n"; // <- IMPORTANT: ensures it prints immediately
-                send(clientSocket, help.c_str(), help.size(), 0);
+                sendAll(clientSocket, help.c_str(), help.size());
                 continue;
             }
 
@@ -294,7 +408,7 @@ private:
                 lock_guard<mutex> lock(clientsMutex);
                 for (auto &c : clients)
                     listMsg += " - " + c.name + " (room: " + c.room + ")\n";
-                send(clientSocket, listMsg.c_str(), listMsg.size(), 0);
+                sendAll(clientSocket, listMsg.c_str(), listMsg.size());
                 continue;
             }
 
@@ -345,6 +459,182 @@ private:
                 continue;
             }
 
+            if (msg.rfind("/block ", 0) == 0)
+            {
+                string targetUser = msg.substr(7);
+                if (targetUser.empty())
+                {
+                    string err = "Usage: /block <username>\n";
+                    sendAll(clientSocket, err.c_str(), err.size());
+                    continue;
+                }
+                {
+                    lock_guard<mutex> lock(clientsMutex);
+                    for (auto &c : clients)
+                    {
+                        if (c.socket == clientSocket)
+                        {
+                            if (find(c.blockedUsers.begin(), c.blockedUsers.end(), targetUser) != c.blockedUsers.end())
+                            {
+                                string msg = "User '" + targetUser + "' is already blocked.\n";
+                                sendAll(clientSocket, msg.c_str(), msg.size());
+                            }
+                            else
+                            {
+                                c.blockedUsers.push_back(targetUser);
+                                string msg = "Blocked user '" + targetUser + "'.\n";
+                                sendAll(clientSocket, msg.c_str(), msg.size());
+                            }
+                            break;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            if (msg.rfind("/unblock ", 0) == 0)
+            {
+                string targetUser = msg.substr(9);
+                if (targetUser.empty())
+                {
+                    string err = "Usage: /unblock <username>\n";
+                    sendAll(clientSocket, err.c_str(), err.size());
+                    continue;
+                }
+                {
+                    lock_guard<mutex> lock(clientsMutex);
+                    for (auto &c : clients)
+                    {
+                        if (c.socket == clientSocket)
+                        {
+                            auto it = find(c.blockedUsers.begin(), c.blockedUsers.end(), targetUser);
+                            if (it != c.blockedUsers.end())
+                            {
+                                c.blockedUsers.erase(it);
+                                string msg = "Unblocked user '" + targetUser + "'.\n";
+                                sendAll(clientSocket, msg.c_str(), msg.size());
+                            }
+                            else
+                            {
+                                string msg = "User '" + targetUser + "' is not blocked.\n";
+                                sendAll(clientSocket, msg.c_str(), msg.size());
+                            }
+                            break;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            if (msg == "/blocklist")
+            {
+                lock_guard<mutex> lock(clientsMutex);
+                for (auto &c : clients)
+                {
+                    if (c.socket == clientSocket)
+                    {
+                        if (c.blockedUsers.empty())
+                        {
+                            string msg = "You have no blocked users.\n";
+                            sendAll(clientSocket, msg.c_str(), msg.size());
+                        }
+                        else
+                        {
+                            string msg = "Blocked users:\n";
+                            for (const auto &u : c.blockedUsers)
+                                msg += " - " + u + "\n";
+                            sendAll(clientSocket, msg.c_str(), msg.size());
+                        }
+                        break;
+                    }
+                }
+                continue;
+            }
+
+            if (msg.rfind("/pin ", 0) == 0)
+            {
+                string room = getClientRoom(clientSocket);
+                string text = msg.substr(5);
+                if (text.empty())
+                {
+                    string err = "Usage: /pin <message>\n";
+                    sendAll(clientSocket, err.c_str(), err.size());
+                    continue;
+                }
+                ensureHistoryDir();
+                string formatted = "📌 [" + nowTimestamp() + "] " + username + ": " + text;
+                {
+                    ofstream pf("history/pins_" + room + ".txt", ios::app);
+                    if (pf.is_open()) pf << formatted << endl;
+                }
+                string notice = "[" + nowTimestamp() + "] " + username + " pinned a message.";
+                broadcastMessage(notice, -1, room);
+                sendAll(clientSocket, "Pinned.\n", 8);
+                continue;
+            }
+
+            if (msg == "/pins")
+            {
+                string room = getClientRoom(clientSocket);
+                ensureHistoryDir();
+                ifstream pf("history/pins_" + room + ".txt");
+                if (!pf.is_open())
+                {
+                    string none = "No pins yet.\n";
+                    sendAll(clientSocket, none.c_str(), none.size());
+                    continue;
+                }
+                string line;
+                string header = "Pinned messages in '" + room + "':\n";
+                sendAll(clientSocket, header.c_str(), header.size());
+                int idx = 1;
+                while (getline(pf, line))
+                {
+                    string entry = to_string(idx++) + ". " + line + "\n";
+                    sendAll(clientSocket, entry.c_str(), entry.size());
+                }
+                continue;
+            }
+
+            if (msg.rfind("/unpin ", 0) == 0)
+            {
+                string room = getClientRoom(clientSocket);
+                string idxStr = msg.substr(7);
+                int idx = 0;
+                try { idx = stoi(idxStr); } catch (...) { idx = 0; }
+                if (idx <= 0)
+                {
+                    string err = "Usage: /unpin <index>\n";
+                    sendAll(clientSocket, err.c_str(), err.size());
+                    continue;
+                }
+                ensureHistoryDir();
+                string path = "history/pins_" + room + ".txt";
+                ifstream pf(path);
+                if (!pf.is_open())
+                {
+                    string none = "No pins to unpin.\n";
+                    sendAll(clientSocket, none.c_str(), none.size());
+                    continue;
+                }
+                vector<string> all;
+                string line;
+                while (getline(pf, line)) all.push_back(line);
+                pf.close();
+                if (idx > (int)all.size())
+                {
+                    string err = "Invalid index.\n";
+                    sendAll(clientSocket, err.c_str(), err.size());
+                    continue;
+                }
+                all.erase(all.begin() + (idx - 1));
+                ofstream wf(path, ios::trunc);
+                for (auto &l : all) wf << l << "\n";
+                string ok = "Unpinned #" + to_string(idx) + ".\n";
+                sendAll(clientSocket, ok.c_str(), ok.size());
+                continue;
+            }
+
             if (msg.rfind("/pm ", 0) == 0)
             {
                 string rest = msg.substr(4);
@@ -352,7 +642,7 @@ private:
                 if (space == string::npos)
                 {
                     string err = "Usage: /pm <username> <message>\n";
-                    send(clientSocket, err.c_str(), err.size(), 0);
+                    sendAll(clientSocket, err.c_str(), err.size());
                     continue;
                 }
                 string targetUser = rest.substr(0, space);
@@ -364,11 +654,55 @@ private:
             if (isRateLimited(clientSocket))
             {
                 string warn = "⚠️ Rate limit exceeded. Slow down!\n";
-                send(clientSocket, warn.c_str(), warn.size(), 0);
+                sendAll(clientSocket, warn.c_str(), warn.size());
                 continue;
             }
 
+            // Room slowmode check
+            {
+                string room = getClientRoom(clientSocket);
+                int slowSeconds = 0;
+                {
+                    lock_guard<mutex> lock(clientsMutex);
+                    auto it = roomSlowmodeSeconds.find(room);
+                    if (it != roomSlowmodeSeconds.end()) slowSeconds = it->second;
+                }
+                if (slowSeconds > 0)
+                {
+                    bool blocked = false;
+                    long remaining = 0;
+                    {
+                        lock_guard<mutex> lock(clientsMutex);
+                        for (auto &c : clients)
+                        {
+                            if (c.socket == clientSocket)
+                            {
+                                auto now = chrono::steady_clock::now();
+                                auto diff = chrono::duration_cast<chrono::seconds>(now - c.lastMsgTime).count();
+                                if (diff < slowSeconds)
+                                {
+                                    blocked = true;
+                                    remaining = slowSeconds - diff;
+                                }
+                                else
+                                {
+                                    c.lastMsgTime = now; // reuse existing timestamp for slowmode window
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if (blocked)
+                    {
+                        string warn = "⌛ Slowmode is on (" + to_string(slowSeconds) + "s). Wait " + to_string(remaining) + "s.\n";
+                        sendAll(clientSocket, warn.c_str(), warn.size());
+                        continue;
+                    }
+                }
+            }
+
             string formatted = "[" + nowTimestamp() + "] " + username + ": " + msg;
+            cout << COLOR_BLUE << "💬 " << COLOR_RESET << formatted << endl;
             broadcastMessage(formatted, clientSocket, getClientRoom(clientSocket));
             saveMessage(getClientRoom(clientSocket), formatted);
         }
@@ -386,32 +720,73 @@ private:
     void sendPrivateMessage(const string &fromUser, const string &toUser, const string &msg)
     {
         lock_guard<mutex> lock(clientsMutex);
+        int fromSock = -1;
+        for (auto &c : clients)
+        {
+            if (c.name == fromUser) fromSock = c.socket;
+        }
         for (auto &c : clients)
         {
             if (c.name == toUser)
             {
+                // Check if receiver has blocked sender
+                bool isBlocked = find(c.blockedUsers.begin(), c.blockedUsers.end(), fromUser) != c.blockedUsers.end();
+                
+                if (isBlocked)
+                {
+                    if (fromSock != -1)
+                    {
+                        string notice = "Cannot send message: user has blocked you.\n";
+                        sendAll(fromSock, notice.c_str(), notice.size());
+                    }
+                    return;
+                }
+                
                 string formatted = "[PM from " + fromUser + "] " + msg + "\n";
-                send(c.socket, formatted.c_str(), formatted.size(), 0);
+                sendAll(c.socket, formatted.c_str(), formatted.size());
                 return;
             }
+        }
+        if (fromSock != -1)
+        {
+            string notice = "User '" + toUser + "' is not online.\n";
+            sendAll(fromSock, notice.c_str(), notice.size());
         }
     }
 
     void broadcastMessage(const string &message, int senderSocket, const string &room)
     {
         lock_guard<mutex> lock(clientsMutex);
+        
+        // Get sender's username
+        string senderName;
+        for (const auto &c : clients)
+        {
+            if (c.socket == senderSocket)
+            {
+                senderName = c.name;
+                break;
+            }
+        }
+        
         for (auto it = clients.begin(); it != clients.end();)
         {
             if (it->room == room && it->socket != senderSocket)
             {
-                ssize_t sent = send(it->socket, message.c_str(), message.size(), 0);
-                if (sent < 0)
+                // Check if receiver has blocked the sender
+                bool isBlocked = find(it->blockedUsers.begin(), it->blockedUsers.end(), senderName) != it->blockedUsers.end();
+                
+                if (!isBlocked)
                 {
-                    close(it->socket);
-                    it = clients.erase(it);
-                    continue;
+                    bool ok = sendAll(it->socket, message.c_str(), message.size()) &&
+                              sendAll(it->socket, "\n", 1);
+                    if (!ok)
+                    {
+                        close(it->socket);
+                        it = clients.erase(it);
+                        continue;
+                    }
                 }
-                send(it->socket, "\n", 1, 0);
             }
             ++it;
         }
@@ -437,11 +812,11 @@ private:
                 send(it->socket, msg.c_str(), msg.size(), 0);
                 close(it->socket);
                 clients.erase(it);
-                cout << "Kicked user: " << username << endl;
+                cout << COLOR_RED << "⚠ Kicked user: " << COLOR_RESET << username << endl;
                 return;
             }
         }
-        cout << "No such user: " << username << endl;
+        cout << COLOR_YELLOW << "⚠ No such user: " << COLOR_RESET << username << endl;
     }
 };
 
@@ -450,7 +825,7 @@ void signalHandler(int signal)
 {
     if (signal == SIGINT || signal == SIGTERM)
     {
-        cout << "\nShutting down server..." << endl;
+        cout << "\n" << COLOR_RED << "⏻ Shutting down server..." << COLOR_RESET << endl;
         if (serverInstance)
             serverInstance->stop();
         exit(0);
@@ -468,6 +843,7 @@ int main(int argc, char *argv[])
         serverInstance = &server;
         signal(SIGINT, signalHandler);
         signal(SIGTERM, signalHandler);
+        signal(SIGPIPE, SIG_IGN);
         server.start();
     }
     catch (const exception &e)
