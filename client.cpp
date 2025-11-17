@@ -45,8 +45,8 @@ static void printBanner() {
     cout << CLR_INFO;
     cout << "\n================================================\n";
     cout << "                                                \n";
-    cout << "            🔒 OPTICOM CLIENT 🔒              \n";
-    cout << "           Encrypted Chat System             \n";
+    cout << "             OPTICOM CLIENT                     \n";
+    cout << "       This Chat is end to end encrypted        \n";
     cout << "                                                \n";
     cout << "================================================\n";
     cout << CLR_RESET;
