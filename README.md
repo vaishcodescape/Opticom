@@ -30,7 +30,7 @@ Opticom is a high-performance, multi-client chat server built in C++ using low-l
 ### Server Administration
 * **Admin Console**: Built-in server console with commands
 * **User Management**: Kick users, broadcast server messages
-* **Room Management**: Set slowmode for specific rooms
+* **Room Management**: Set slowmode for specific rooms so spam does not happen.
 * **Colorful Logging**: Server console displays colored logs for easy monitoring
 
 ## Architecture
