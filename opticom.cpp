@@ -33,7 +33,7 @@ using namespace std;
 // Simple XOR encryption/decryption
 namespace Encryption
 {
-    const string KEY = "OpticomSecureKey2024"; // Shared key
+    const string KEY = "OpticomSecureKey2025"; // Shared key
     
     string encrypt(const string &plaintext)
     {
@@ -117,8 +117,8 @@ public:
         cout << "                                                \n";
         cout << "================================================\n" << COLOR_RESET;
         cout << COLOR_GREEN << "✓ Server started on port " << port << COLOR_RESET << endl;
-        cout << COLOR_BLUE << "⌛ Waiting for clients to connect...\n" << COLOR_RESET;
-        cout << COLOR_MAGENTA << "📝 Admin commands: type 'help' for options\n" << COLOR_RESET;
+        cout << COLOR_BLUE << " Waiting for clients to connect...\n" << COLOR_RESET;
+        cout << COLOR_MAGENTA << " Admin commands: type 'help' for options\n" << COLOR_RESET;
         cout << string(50, '-') << "\n" << endl;
 
         thread(&ChatServer::adminConsole, this).detach();
@@ -317,11 +317,16 @@ private:
             return;
         }
 
+        nameBuf[USERNAME_MAX - 1] = '\0'; // Ensure null termination
         string username(nameBuf);
         while (!username.empty() && (username.back() == '\n' || username.back() == '\r'))
             username.pop_back();
         if (username.empty())
             username = "Anonymous";
+        
+        // Truncate username if too long (safety check)
+        if (username.length() > 63)
+            username = username.substr(0, 63);
 
         {
             lock_guard<mutex> lock(clientsMutex);
@@ -836,7 +841,19 @@ int main(int argc, char *argv[])
 {
     int port = 8080;
     if (argc > 1)
-        port = atoi(argv[1]);
+    {
+        try {
+            port = stoi(argv[1]);
+            if (port < 1 || port > 65535)
+            {
+                cerr << "Error: Port must be between 1 and 65535" << endl;
+                return 1;
+            }
+        } catch (const exception &e) {
+            cerr << "Error: Invalid port number" << endl;
+            return 1;
+        }
+    }
     try
     {
         ChatServer server(port);

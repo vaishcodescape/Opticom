@@ -14,7 +14,7 @@ using namespace std;
 // Simple XOR encryption/decryption (must match server)
 namespace Encryption
 {
-    const string KEY = "OpticomSecureKey2024"; // Shared key
+    const string KEY = "OpticomSecureKey2025"; // Shared key (must match server)
     
     string encrypt(const string &plaintext)
     {
@@ -114,11 +114,21 @@ int main(int argc, char* argv[]) {
     string serverIp = "127.0.0.1";
     int port;
 
-    if (argc == 2) {
-        port = stoi(argv[1]);
-    } else {
-        serverIp = argv[1];
-        port = stoi(argv[2]);
+    try {
+        if (argc == 2) {
+            port = stoi(argv[1]);
+        } else {
+            serverIp = argv[1];
+            port = stoi(argv[2]);
+        }
+        
+        if (port < 1 || port > 65535) {
+            cerr << "Error: Port must be between 1 and 65535" << endl;
+            return 1;
+        }
+    } catch (const exception &e) {
+        cerr << "Error: Invalid port number" << endl;
+        return 1;
     }
 
     printBanner();
@@ -145,6 +155,13 @@ int main(int argc, char* argv[]) {
     cout << "Enter your username: ";
     getline(cin, username);
     if (username.empty()) username = "Anonymous";
+    
+    // Limit username length to prevent buffer issues (server expects max 63 bytes)
+    if (username.length() > 63) {
+        username = username.substr(0, 63);
+        cout << "Warning: Username truncated to 63 characters" << endl;
+    }
+    
     send(sock, username.c_str(), username.size(), 0);
 
     cout << "Connected to server (" << serverIp << ":" << port << ") as " << username << endl;
