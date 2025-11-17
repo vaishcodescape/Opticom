@@ -317,11 +317,16 @@ private:
             return;
         }
 
+        nameBuf[USERNAME_MAX - 1] = '\0'; // Ensure null termination
         string username(nameBuf);
         while (!username.empty() && (username.back() == '\n' || username.back() == '\r'))
             username.pop_back();
         if (username.empty())
             username = "Anonymous";
+        
+        // Truncate username if too long (safety check)
+        if (username.length() > 63)
+            username = username.substr(0, 63);
 
         {
             lock_guard<mutex> lock(clientsMutex);
@@ -836,7 +841,19 @@ int main(int argc, char *argv[])
 {
     int port = 8080;
     if (argc > 1)
-        port = atoi(argv[1]);
+    {
+        try {
+            port = stoi(argv[1]);
+            if (port < 1 || port > 65535)
+            {
+                cerr << "Error: Port must be between 1 and 65535" << endl;
+                return 1;
+            }
+        } catch (const exception &e) {
+            cerr << "Error: Invalid port number" << endl;
+            return 1;
+        }
+    }
     try
     {
         ChatServer server(port);
