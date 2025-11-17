@@ -33,7 +33,7 @@ using namespace std;
 // Simple XOR encryption/decryption
 namespace Encryption
 {
-    const string KEY = "OpticomSecureKey2024"; // Shared key
+    const string KEY = "OpticomSecureKey2025"; // Shared key
     
     string encrypt(const string &plaintext)
     {
@@ -117,8 +117,8 @@ public:
         cout << "                                                \n";
         cout << "================================================\n" << COLOR_RESET;
         cout << COLOR_GREEN << "✓ Server started on port " << port << COLOR_RESET << endl;
-        cout << COLOR_BLUE << "⌛ Waiting for clients to connect...\n" << COLOR_RESET;
-        cout << COLOR_MAGENTA << "📝 Admin commands: type 'help' for options\n" << COLOR_RESET;
+        cout << COLOR_BLUE << " Waiting for clients to connect...\n" << COLOR_RESET;
+        cout << COLOR_MAGENTA << " Admin commands: type 'help' for options\n" << COLOR_RESET;
         cout << string(50, '-') << "\n" << endl;
 
         thread(&ChatServer::adminConsole, this).detach();
