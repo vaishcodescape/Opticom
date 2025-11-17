@@ -64,8 +64,8 @@ void receiveMessages(int sock, const string promptLabel) {
         memset(buffer, 0, sizeof(buffer));
         ssize_t bytes = recv(sock, buffer, sizeof(buffer) - 1, 0);
         if (bytes <= 0) {
-            cout << "\n" << CLR_ERR << "╔═══════════════════════════════╗\n";
-            cout << "║ Disconnected from server     ║\n";
+            cout << "\r\033[K" << CLR_ERR << "╔═══════════════════════════════╗\n";
+            cout << "║ Disconnected from server      ║\n";
             cout << "╚═══════════════════════════════╝" << CLR_RESET << endl;
             close(sock);
             g_running = false;
@@ -76,11 +76,19 @@ void receiveMessages(int sock, const string promptLabel) {
         string encrypted(buffer, bytes);
         string line = Encryption::decrypt(encrypted);
         
+        // Remove trailing newlines/carriage returns from the decrypted message
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+            line.pop_back();
+        }
+        
+        // Clear current line and move to new line before printing message
+        cout << "\r\033[K";
+        
         // Enhanced color heuristics with better formatting
         if (line.find("[SERVER]") != string::npos) {
-            cout << "\n" << CLR_INFO << "┃ " << line << CLR_RESET << endl;
+            cout << CLR_INFO << "┃ " << line << CLR_RESET << endl;
         } else if (line.find("[PM from ") != string::npos) {
-            cout << "\n" << CLR_PM << "✉ " << line << CLR_RESET << endl;
+            cout << CLR_PM << "✉ " << line << CLR_RESET << endl;
         } else if (line.find("joined") != string::npos) {
             cout << CLR_INFO << "→ " << line << CLR_RESET << endl;
         } else if (line.find("left") != string::npos) {
