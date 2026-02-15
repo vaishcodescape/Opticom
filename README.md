@@ -199,15 +199,6 @@ In the server console:
 /pm Alice Want to play?
 /block SpamBot
 ```
-
-**Server:**
-
-![Server](images/server.png)
-
-**Client:**
-
-![Client](images/client.png)
-
 ---
 
 ## Project structure
@@ -251,50 +242,3 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-## Appendix: Detailed docs
-
-<details>
-<summary>Security & encryption</summary>
-
-Messages are encrypted with XOR-based encryption (shared key). Blocking is enforced server-side; blocked users’ messages are not delivered to you and they cannot PM you. Rate limiting and room slowmode reduce spam.
-</details>
-
-<details>
-<summary>UI features</summary>
-
-- **Client:** Color-coded messages, icons for joins/leaves/PMs, encrypted badge.
-- **Server:** ASCII banner, colored logs (chat, joins, disconnects, errors), formatted boxes for lists.
-</details>
-
-<details>
-<summary>Error handling & performance</summary>
-
-- Socket/bind errors, connection failures, send failures, graceful disconnects.
-- Broadcast with block-list filtering, minimal extra allocation, thread-per-client, low encryption overhead.
-</details>
-
-<details>
-<summary>Windows: WSL and Remote-SSH steps</summary>
-
-### WSL
-
-```powershell
-wsl --install
-```
-
-In WSL (Ubuntu):
-
-```bash
-sudo apt update && sudo apt install g++ make -y
-git clone https://github.com/vaishcodescape/Opticom.git
-cd Opticom && make && ./opticom
-# In another terminal: ./client
-```
-
-### Remote-SSH (Linux VM)
-
-1. Install VS Code and the **Remote - SSH** extension.
-2. Set up a Linux VM (e.g. Ubuntu in VirtualBox/VMware), install `openssh-server`, start SSH.
-3. In VS Code: **Remote-SSH: Connect to Host** → `ssh user@<VM_IP>`.
-4. Open the Opticom folder and run `make`, `./opticom`, `./client` as above.
-</details>
