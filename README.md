@@ -1,4 +1,4 @@
-# Opticom - Multi-Client Chat Server
+# Opticom - Optimised Communication Server
 
 Opticom is a high-performance, multi-client chat server built in C++ using low-latency and fast-optimized methods.
 ## Features
