@@ -398,14 +398,4 @@ You can compile directly on Windows with MinGW or Cygwin, but you’ll need to:
 ## MIT License
 
 See MIT LICENSE file for details.
-
-## Course Information
-
-This project was developed as part of IT-227 Computer System Programming Course in the B.Tech ICT Branch, focusing on:
-
-* Socket programming
-* Multi-threading
-* System programming concepts
-* Network communication protocols
-
 ---
