@@ -114,6 +114,8 @@ make
 - **Mutex locks** for thread-safe client list and shared state
 - **Signal handling** for graceful shutdown and cleanup
 
+![Opticom architecture](images/Architecture.png)
+
 ---
 
 ## Building & running
