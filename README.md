@@ -224,18 +224,6 @@ Opticom/
 
 ---
 
-## Running on Windows
-
-Opticom targets Unix-like systems. On Windows you can:
-
-1. **WSL** — Install Ubuntu via `wsl --install`, then `make` and run as above.
-2. **Remote SSH** — Use VS Code Remote-SSH into a Linux VM and build/run there.
-3. **MinGW/Cygwin** — Possible with Winsock and porting socket/thread code; WSL or a VM is simpler.
-
-See the end of this README for step-by-step WSL and Remote-SSH instructions.
-
----
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
