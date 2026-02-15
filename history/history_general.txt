@@ -1,3 +1,0 @@
-[15:36:00] user1 joined the chat (room: general)
-[15:36:08] user1: hello welcome to opticom!
-[15:44:29] user1 left the chat
