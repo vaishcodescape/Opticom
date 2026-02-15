@@ -1,7 +1,6 @@
 # Opticom - Multi-Client Chat Server
 
-Opticom is a high-performance, multi-client chat server built in C++ using low-latency and fast-optimized methods. This project was developed as part of the IT-227 Computer System Programming Course in the B.Tech ICT Branch.
-
+Opticom is a high-performance, multi-client chat server built in C++ using low-latency and fast-optimized methods.
 ## Features
 
 ### Core Features
