@@ -106,7 +106,7 @@ make
 - **Logging** — Color-coded server logs for monitoring
 
 ---
-
+## Project structure
 ## Architecture (high level)
 
 - **TCP sockets** for reliable communication
@@ -179,43 +179,6 @@ In the server console:
 
 ---
 
-## Example session
-
-```bash
-# Terminal 1
-./opticom
-
-# Terminal 2
-./client
-# username: Alice
-# Hello everyone!
-
-# Terminal 3
-./client
-# username: Bob
-# [12:34:56] Alice: Hello everyone!
-# Hi Alice!
-
-# In any client
-/join gaming
-/pm Alice Want to play?
-/block SpamBot
-```
----
-
-## Project structure
-
-```
-Opticom/
-├── opticom.cpp    # Server: ChatServer, sockets, threads, rooms, encryption
-├── client.cpp     # Client: connection, encryption, terminal UI
-├── Makefile       # Build (C++17, -pthread)
-├── README.md
-├── LICENSE
-└── history/       # Auto-created; per-room logs and pins
-```
-
----
 
 ## Technical notes
 
