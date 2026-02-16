@@ -71,7 +71,16 @@ make
 ![Client](images/client.png)
 
 ---
+## Project structure
+## Architecture 
 
+- **TCP sockets** for reliable communication
+- **POSIX threads** for one thread per connected client
+- **Mutex locks** for thread-safe client list and shared state
+- **Signal handling** for graceful shutdown and cleanup
+
+![Opticom architecture](images/Architecture.png)
+---
 ## Features
 
 ### Core
@@ -104,17 +113,6 @@ make
 - **User management** — Kick users, broadcast server messages
 - **Room management** — Set slowmode per room
 - **Logging** — Color-coded server logs for monitoring
-
----
-## Project structure
-## Architecture (high level)
-
-- **TCP sockets** for reliable communication
-- **POSIX threads** for one thread per connected client
-- **Mutex locks** for thread-safe client list and shared state
-- **Signal handling** for graceful shutdown and cleanup
-
-![Opticom architecture](images/Architecture.png)
 
 ---
 
